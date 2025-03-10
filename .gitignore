@@ -7,6 +7,9 @@ venv/
 # Logs
 *.log
 
+# User Registry
+user_registry.db
+
 # Python bytecode
 __pycache__/
 *.py[cod]
