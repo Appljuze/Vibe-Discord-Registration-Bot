@@ -21,66 +21,76 @@ from slowapi.errors import RateLimitExceeded
 from contextlib import contextmanager
 
 class RegistrationModal(ui.Modal, title='Register Your Vibe Account'):
-    account_id = ui.TextInput(
-        label='Vibe Account ID',
-        placeholder='Enter your Vibe Account ID...',
+    account_code = ui.TextInput(
+        label='Vibe Account Code',
+        placeholder='Enter your code...',
         required=True
     )
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            account_id = str(self.account_id)
+            account_code = str(self.account_code)
+            
+            # Validate code length
+            if len(account_code) != 155:
+                embed = discord.Embed(
+                    title="❌ Registration Error",
+                    description="Incorrect code. Be sure to copy it directly from https://vibe.trading/",
+                    color=discord.Color.blue()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
             
             with get_db() as conn:
                 c = conn.cursor()
                 
-                # Check if this Vibe Account ID is already registered to another user
+                # Check if this Vibe Account Code is already registered to another user
                 existing_user_check = c.execute(
                     'SELECT discord_id FROM users WHERE account_id = ?', 
-                    (account_id,)
+                    (account_code,)
                 ).fetchone()
                 
                 if existing_user_check and str(existing_user_check[0]) != str(interaction.user.id):
                     embed = discord.Embed(
                         title="❌ Registration Error",
-                        description="This Vibe Account ID is already registered to another Discord account.",
+                        description="This Account Code is already registered to another Discord account.",
                         color=discord.Color.blue()
                     )
                     await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
                 
-                # Check if this user already has a registered Vibe Account ID
+                # Check if this user already has a registered Vibe Account Code
                 existing_user = c.execute(
                     'SELECT account_id FROM users WHERE discord_id = ?', 
                     (str(interaction.user.id),)
                 ).fetchone()
                 
-                if existing_user and existing_user[0] == account_id:
+                if existing_user and existing_user[0] == account_code:
                     embed = discord.Embed(
                         title="❌ Registration Error",
-                        description="This Vibe Account ID is already registered to your Discord account.",
+                        description="This Account Code is already registered to your Discord account.",
                         color=discord.Color.blue()
                     )
                     await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
                 
                 if existing_user:
-                    old_account_id = existing_user[0]
-                    update_message = f"Your Vibe Account ID has been updated. Previous ID: {old_account_id}"
+                    old_account_code = existing_user[0]
+                    update_message = f"Your Vibe Account Code has been updated. Previous Code: {old_account_code}"
                     
                     c.execute(
                         'UPDATE users SET account_id = ?, last_updated = CURRENT_TIMESTAMP WHERE discord_id = ?',
-                        (account_id, str(interaction.user.id))
+                        (account_code, str(interaction.user.id))
                     )
                 else:
                     c.execute(
                         'INSERT INTO users (discord_id, account_id) VALUES (?, ?)',
-                        (str(interaction.user.id), account_id)
+                        (str(interaction.user.id), account_code)
                     )
                 
                 c.execute(
                     'INSERT INTO audit_log (action, discord_id, details) VALUES (?, ?, ?)',
-                    ('register', str(interaction.user.id), f'Updated Vibe Account ID: {account_id}')
+                    ('register', str(interaction.user.id), f'Updated Vibe Account Code: {account_code}')
                 )
                 
                 conn.commit()
@@ -94,11 +104,11 @@ class RegistrationModal(ui.Modal, title='Register Your Vibe Account'):
                 else:
                     embed = discord.Embed(
                     title="✅ Registration Successful",
-                    description=f"You have successfully linked Vibe Account **{account_id}** to this Discord account!",
+                    description=f"You have successfully linked your Vibe Account to this Discord account!",
                     color=discord.Color.blue()
                 )
                 
-                embed.add_field(name="Registered Vibe Account ID", value=account_id, inline=False)
+                # embed.add_field(name="Registered Vibe Account Code", value=account_code, inline=False)
                 
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 
@@ -111,31 +121,31 @@ class RegistrationModal(ui.Modal, title='Register Your Vibe Account'):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# Create the Enter ID view
-class EnterIDView(ui.View):
+# Create the Enter Code view
+class EnterCodeView(ui.View):
     def __init__(self):
         super().__init__(timeout=300)  # 5-minute timeout
     
-    @discord.ui.button(label="Enter Vibe Account ID", style=ButtonStyle.success)
-    async def enter_id_button(self, interaction: discord.Interaction, button: ui.Button):
+    @discord.ui.button(label="Enter Your Code", style=ButtonStyle.success)
+    async def enter_code_button(self, interaction: discord.Interaction, button: ui.Button):
         # Open the registration modal
         await interaction.response.send_modal(RegistrationModal())
 
-# Create the Update ID view for registered users
-class UpdateIDView(ui.View):
+# Create the Update Code view for registered users
+class UpdateCodeView(ui.View):
     def __init__(self):
         super().__init__(timeout=300)  # 5-minute timeout
     
-    @discord.ui.button(label="🔄 Update ID", style=ButtonStyle.primary)
-    async def update_id_button(self, interaction: discord.Interaction, button: ui.Button):
-        # Open the registration modal for ID update
+    @discord.ui.button(label="🔄 Update Code", style=ButtonStyle.primary)
+    async def update_code_button(self, interaction: discord.Interaction, button: ui.Button):
+        # Open the registration modal for Code update
         await interaction.response.send_modal(RegistrationModal())
 
 class RegistrationView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)  # Persistent buttons
     
-    @discord.ui.button(label="Register", style=ButtonStyle.primary)
+    @discord.ui.button(label="Connect", style=ButtonStyle.primary)
     async def register_button(self, interaction: discord.Interaction, button: ui.Button):
         try:
             # First check if user is already registered
@@ -148,12 +158,12 @@ class RegistrationView(ui.View):
                 ).fetchone()
             
             if user_details:
-                # User is already registered, show profile with Update ID button
-                account_id, timestamp, last_updated = user_details
+                # User is already registered, show profile with Update Code button
+                account_code, timestamp, last_updated = user_details
                 
                 embed = discord.Embed(
                     title="Profile Details",
-                    description="✅ You are already registered! \n\n🔄 Use the **Update ID** button below if you want to link to a different Vibe Account ID.",
+                    description="✅ You are already registered! \n\n🔄 Use the **Update Code** button below if you want to link to a different Vibe account.",
                     color=discord.Color.blue()
                 )
                 
@@ -162,11 +172,13 @@ class RegistrationView(ui.View):
                     icon_url=interaction.user.avatar.url if interaction.user.avatar else None
                 )
                 
+                '''
                 embed.add_field(
-                    name="Vibe Account ID",
-                    value=account_id,
+                    name="Vibe Account Code",
+                    value=account_code,
                     inline=False
                 )
+                '''
                 
                 embed.add_field(
                     name="Registration Date",
@@ -181,36 +193,43 @@ class RegistrationView(ui.View):
                         inline=False
                     )
                 
-                # Create UpdateIDView with Update ID button
-                update_view = UpdateIDView()
+                # Create UpdateCodeView with Update Code button
+                update_view = UpdateCodeView()
                 
                 await interaction.response.send_message(embed=embed, view=update_view, ephemeral=True)
                 return
             
-            # If not registered, show registration info with image and "Enter ID" button
+            # If not registered, show registration info with image and "Enter Code" button
             embed = discord.Embed(
-                title="Register Your Vibe Account",
-                description="Start earning daily community points by connecting your Discord account to your Vibe account!\n",
+                title="Connect your Discord to Vibe",
+                description="Earn **daily community points** based on your Discord roles by connecting your Discord account to Vibe!\n",
                 color=discord.Color.blue()
             )
 
-            # Add prompt to enter ID
+            # Add prompt to enter code
             embed.add_field( 
-                name="__How to Register__",
+                name="__How to Connect__",
                 value="",
                 inline=False
             )
 
-            # Add prompt to enter ID
+            # Step 1
             embed.add_field( 
-                name="1️⃣ Locate your Vibe Account ID (check screenshot below)",
+                name="1️⃣ Navigate to https://vibe.trading/",
                 value="",
                 inline=False
             )
 
-            # Add prompt to enter ID
+            # Step 2
             embed.add_field( 
-                name="2️⃣ Click the green button below and enter your ID 👇\n▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁",
+                name="2️⃣ Under 'Vibe Discord Users', click 'Connect' and copy your code",
+                value="",
+                inline=False
+            )
+
+            # Step 3
+            embed.add_field( 
+                name="3️⃣ Click the green button below and paste your code 👇\n▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁",
                 value="",
                 inline=False
             )
@@ -222,16 +241,16 @@ class RegistrationView(ui.View):
                 inline=False
             )    
             
-            # Add image showing where to find ID
-            account_id_image = os.getenv('ACCOUNT_ID_IMAGE_URL')
-            if account_id_image:
-                embed.set_image(url=account_id_image)
+            # Add image showing where to find code
+            code_image = os.getenv('ACCOUNT_ID_IMAGE_URL')
+            if code_image:
+                embed.set_image(url=code_image)
             
-            # Create view with Enter ID button
-            enter_id_view = EnterIDView()
+            # Create view with Enter Code button
+            enter_code_view = EnterCodeView()
             
             # Send as ephemeral message
-            await interaction.response.send_message(embed=embed, view=enter_id_view, ephemeral=True)
+            await interaction.response.send_message(embed=embed, view=enter_code_view, ephemeral=True)
             
         except Exception as e:
             logger.error(f"Error in register button: {str(e)}", exc_info=True)
@@ -240,7 +259,7 @@ class RegistrationView(ui.View):
                 ephemeral=True
             )
     
-    @discord.ui.button(label="Verify", style=ButtonStyle.secondary)
+    @discord.ui.button(label="I've Already Connected", style=ButtonStyle.secondary)
     async def verify_button(self, interaction: discord.Interaction, button: ui.Button):
         # Reuse check command logic
         try:
@@ -255,13 +274,13 @@ class RegistrationView(ui.View):
                 if not user_details:
                     embed = discord.Embed(
                         title="Profile Not Found",
-                        description="You haven't registered your Vibe Account ID yet. Click the Register button to add your Vibe Account ID.",
+                        description="You haven't linked your Discord and Vibe accounts yet. Click the Connect button to link your accounts now.",
                         color=discord.Color.red()
                     )
                     await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
                 
-                account_id, timestamp, last_updated = user_details
+                account_code, timestamp, last_updated = user_details
                 
                 embed = discord.Embed(
                     title="Profile Details",
@@ -274,11 +293,13 @@ class RegistrationView(ui.View):
                     icon_url=interaction.user.avatar.url if interaction.user.avatar else None
                 )
                 
+                '''
                 embed.add_field(
-                    name="Vibe Account ID",
-                    value=account_id,
+                    name="Vibe Account Code",
+                    value=account_code,
                     inline=False
                 )
+                '''
                 
                 embed.add_field(
                     name="Registration Date",
@@ -405,23 +426,35 @@ intents.message_content = True
 intents.members = True  # Enable member intents
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-@bot.tree.command(name="register", description="Register your Vibe Account ID")
-async def register(interaction: discord.Interaction, account_id: str):
-    """Register a user's Vibe Account ID"""
+# /register Command
+'''
+@bot.tree.command(name="register", description="Register your Vibe Account Code")
+async def register(interaction: discord.Interaction, account_code: str):
+    """Register a user's Vibe Account Code"""
     try:
+        # Validate code length
+        if len(account_code) != 14:
+            embed = discord.Embed(
+                title="❌ Registration Error",
+                description="Your code should be exactly 14 characters long.",
+                color=discord.Color.blue()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+            
         with get_db() as conn:
             c = conn.cursor()
             
-            # Check if this Vibe Account ID is already registered to another user
+            # Check if this Vibe Account Code is already registered to another user
             existing_account = c.execute(
                 'SELECT discord_id FROM users WHERE account_id = ?', 
-                (account_id,)
+                (account_code,)
             ).fetchone()
             
             if existing_account and str(existing_account[0]) != str(interaction.user.id):
                 embed = discord.Embed(
                     title="❌ Registration Error",
-                    description="This Vibe Account ID is already registered to another Discord account.",
+                    description="This Account Code is already registered to another Discord account.",
                     color=discord.Color.blue()
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -434,25 +467,25 @@ async def register(interaction: discord.Interaction, account_id: str):
             ).fetchone()
             
             if existing_user:
-                old_account_id = existing_user[0]
-                update_message = f"Your Vibe Account ID has been updated. Previous ID: {old_account_id}"
+                old_account_code = existing_user[0]
+                update_message = f"Your Vibe Account Code has been updated. Previous Code: {old_account_code}"
                 
                 # Update existing user
                 c.execute(
                     'UPDATE users SET account_id = ?, last_updated = CURRENT_TIMESTAMP WHERE discord_id = ?',
-                    (account_id, str(interaction.user.id))
+                    (account_code, str(interaction.user.id))
                 )
             else:
                 # Insert new user
                 c.execute(
                     'INSERT INTO users (discord_id, account_id) VALUES (?, ?)',
-                    (str(interaction.user.id), account_id)
+                    (str(interaction.user.id), account_code)
                 )
             
             # Log the action
             c.execute(
                 'INSERT INTO audit_log (action, discord_id, details) VALUES (?, ?, ?)',
-                ('register', str(interaction.user.id), f'Updated Vibe Account ID: {account_id}')
+                ('register', str(interaction.user.id), f'Updated Vibe Account Code: {account_code}')
             )
             
             conn.commit()
@@ -467,14 +500,14 @@ async def register(interaction: discord.Interaction, account_id: str):
             else:
                 embed = discord.Embed(
                     title="✅ Registration Successful",
-                    description=f"You have successfully linked Vibe Account **{account_id}** to this Discord account!",
+                    description=f"You have successfully linked Vibe Account Code **{account_code}** to this Discord account!",
                     color=discord.Color.blue()
                 )
             
-            embed.add_field(name="Registered Vibe Account ID", value=account_id, inline=False)
+            embed.add_field(name="Registered Vibe Account Code", value=account_code, inline=False)
             
             await interaction.response.send_message(embed=embed, ephemeral=True)
-            logger.info(f"User {interaction.user.id} registered Vibe Account ID: {account_id}")
+            logger.info(f"User {interaction.user.id} registered Vibe Account Code: {account_code}")
     
     except Exception as e:
         logger.error(f"Error in register command: {str(e)}", exc_info=True)
@@ -484,8 +517,11 @@ async def register(interaction: discord.Interaction, account_id: str):
             color=discord.Color.blue()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
+'''
 
-@bot.tree.command(name="check", description="Check your registered Vibe Account ID")
+# /check Command
+'''
+@bot.tree.command(name="check", description="Check your registered Vibe Account Code")
 async def check(interaction: discord.Interaction):
     """Let users check their registered profile details"""
     try:
@@ -501,13 +537,13 @@ async def check(interaction: discord.Interaction):
             if not user_details:
                 embed = discord.Embed(
                     title="Profile Not Found",
-                    description="You haven't registered your Vibe Account ID yet. Use /register to add your Vibe Account ID.",
+                    description="You haven't registered your Vibe Account Code yet. Use /register to add your Vibe Account Code.",
                     color=discord.Color.red()
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
             
-            account_id, timestamp, last_updated = user_details
+            account_code, timestamp, last_updated = user_details
             
             # Create embed
             embed = discord.Embed(
@@ -521,10 +557,10 @@ async def check(interaction: discord.Interaction):
                 icon_url=interaction.user.avatar.url if interaction.user.avatar else None
             )
             
-            # Add field for Vibe Account ID
+            # Add field for Vibe Account Code
             embed.add_field(
-                name="Vibe Account ID",
-                value=account_id,
+                name="Vibe Account Code",
+                value=account_code,
                 inline=False
             )
             
@@ -557,8 +593,8 @@ async def check(interaction: discord.Interaction):
             )
             conn.commit()
             
-            # Add the Update ID button for registered users
-            update_view = UpdateIDView()
+            # Add the Update Code button for registered users
+            update_view = UpdateCodeView()
             await interaction.response.send_message(embed=embed, view=update_view, ephemeral=True)
             logger.info(f"User {interaction.user.id} checked their profile details")
             
@@ -570,6 +606,7 @@ async def check(interaction: discord.Interaction):
             color=discord.Color.red()
         )
         await interaction.response.send_message(embed=error_embed, ephemeral=True)
+'''
 
 @bot.tree.command(name="search", description="Search for a user's registration details (Admin only)")
 @app_commands.checks.has_permissions(administrator=True)
@@ -605,7 +642,7 @@ async def search_user(interaction: discord.Interaction, user: discord.User):
             roles = ["Error fetching roles"]
             logger.error(f"Error fetching roles for {user.id}: {e}")
         
-        account_id, timestamp, last_updated = user_data
+        account_code, timestamp, last_updated = user_data
         
         embed = discord.Embed(
             title=f"🔍 User Search Result for {user.name}",
@@ -617,8 +654,8 @@ async def search_user(interaction: discord.Interaction, user: discord.User):
         embed.add_field(name="Username", value=user.name, inline=True)
 
         embed.add_field(
-            name="📊 Registered Vibe Account ID", 
-            value=account_id, 
+            name="📊 Registered Vibe Account Code", 
+            value=account_code, 
             inline=False
         )
         
@@ -641,7 +678,7 @@ async def search_user(interaction: discord.Interaction, user: discord.User):
 @bot.tree.command(name="users", description="List all registered users (Admin only)")
 @app_commands.checks.has_permissions(administrator=True)
 async def list_users(interaction: discord.Interaction):
-    """List all registered users with their Vibe Account IDs"""
+    """List all registered users with their Vibe Account Codes"""
     try:
         await interaction.response.defer(ephemeral=True)
         
@@ -664,12 +701,12 @@ async def list_users(interaction: discord.Interaction):
         messages = []
         current_message = "🔍 **Registered Users** 🔍\n\n"
         current_message += "```\n"
-        current_message += f"{'Username':<20} {'Vibe Account ID':<25} {'Registered On (UTC)'}\n"
+        current_message += f"{'Username':<30} {'Discord ID':<20} {'Registered On (UTC)'}\n"
         current_message += "-" * 80 + "\n"
         
         guild = interaction.guild
         
-        for discord_id, account_id, timestamp in users:
+        for discord_id, account_code, timestamp in users:
             try:
                 member = await guild.fetch_member(int(discord_id))
                 username = member.name if member else "Unknown User"
@@ -679,16 +716,16 @@ async def list_users(interaction: discord.Interaction):
                 username = "Fetch Error"
                 logger.error(f"Error fetching user {discord_id}: {e}")
             
-            truncated_username = (username[:17] + '...') if len(username) > 20 else username
+            truncated_username = (username[:27] + '...') if len(username) > 30 else username
             
-            user_line = f"{truncated_username:<20} {account_id:<25} {timestamp}\n"
+            user_line = f"{truncated_username:<30} {discord_id:<20} {timestamp}\n"
             
             if len(current_message + user_line) > 1900:
                 current_message += "```"
                 messages.append(current_message)
                 current_message = "**Registered Users (continued)** 🔍\n\n"
                 current_message += "```\n"
-                current_message += f"{'Username':<20} {'Vibe Account ID':<25} {'Registered On'}\n"
+                current_message += f"{'Username':<30} {'Discord ID':<20} {'Registered On'}\n"
                 current_message += "-" * 80 + "\n"
             
             current_message += user_line
@@ -736,8 +773,8 @@ async def delete_user(interaction: discord.Interaction, user: discord.User):
             conn.commit()
         
         # Prepare deletion message
-        account_id = user_data[0]
-        deletion_info = f"Vibe Account ID: {account_id}"
+        account_code = user_data[0]
+        deletion_info = f"Vibe Account Code: {account_code}"
         
         embed = discord.Embed(
             title="👋 User Registration Deleted",
@@ -758,19 +795,23 @@ async def delete_user(interaction: discord.Interaction, user: discord.User):
         logger.error(f"Error in delete_user command: {str(e)}", exc_info=True)
         await interaction.followup.send(f"An error occurred: {str(e)}", ephemeral=True)
 
-@app.get("/users/{account_id}")
+@app.get("/users/{account_code}")
 @limiter.limit("1000/minute")
 async def get_user_roles(
     request: Request,
-    account_id: str,
+    account_code: str,
     api_key: str = Depends(get_api_key)
 ):
-    """Get Discord roles for a user by Vibe Account ID"""
+    """Get Discord roles for a user by Vibe Account Code"""
     try:            
+        # Validate code length
+        if len(account_code) != 155:
+            raise HTTPException(status_code=400, detail="Incorrect code. Be sure to copy it directly from https://vibe.trading/")
+            
         with get_db() as conn:
             c = conn.cursor()
             
-            c.execute('SELECT discord_id FROM users WHERE account_id = ?', (account_id,))
+            c.execute('SELECT discord_id FROM users WHERE account_id = ?', (account_code,))
             
             result = c.fetchone()
             if not result:
@@ -797,7 +838,7 @@ async def get_user_roles(
             # Log the API request
             c.execute(
                 'INSERT INTO audit_log (action, discord_id, details) VALUES (?, ?, ?)',
-                ('api_request', discord_id, f'Roles queried for {account_id}')
+                ('api_request', discord_id, f'Roles queried for {account_code}')
             )
             conn.commit()
             
@@ -815,15 +856,19 @@ async def get_user_roles(
 @limiter.limit("1000/minute")
 async def check_user_existence(
     request: Request,
-    account_id: str,
+    account_code: str,
     api_key: str = Depends(get_api_key)
 ):
-    """Check if a user exists in the database by Vibe Account ID"""
+    """Check if a user exists in the database by Vibe Account Code"""
     try:
+        # Validate code length
+        if len(account_code) != 155:
+            raise HTTPException(status_code=400, detail="Incorrect code. Be sure to copy it directly from https://vibe.trading/")
+            
         with get_db() as conn:
             c = conn.cursor()
             
-            c.execute('SELECT COUNT(*) FROM users WHERE account_id = ?', (account_id,))
+            c.execute('SELECT COUNT(*) FROM users WHERE account_id = ?', (account_code,))
             
             result = c.fetchone()
             user_exists = result[0] > 0
@@ -831,12 +876,12 @@ async def check_user_existence(
             # Log the check
             c.execute(
                 'INSERT INTO audit_log (action, details) VALUES (?, ?)',
-                ('existence_check', f'Checked existence for: {account_id}')
+                ('existence_check', f'Checked existence for: {account_code}')
             )
             conn.commit()
             
             return {
-                "account_id": account_id,
+                "account_code": account_code,
                 "registered_to_user": user_exists,
                 "timestamp": datetime.utcnow().isoformat()
             }
@@ -851,8 +896,8 @@ async def setup(interaction: discord.Interaction):
     """Setup the registration message with buttons"""
     try:
         embed = discord.Embed(
-            title="Connect your Discord account to your Vibe account",
-            description="Register your account to start earning Community Points.",
+            title="Link your Discord to Vibe and earn Community Points",
+            description="Connect your account to collect daily rewards based on your roles.\n",
             color=discord.Color.blue()
         )
         
@@ -863,9 +908,9 @@ async def setup(interaction: discord.Interaction):
         else:
             logger.warning("SETUP_IMAGE_URL is not set in environment variables. Setup message will not have an image.")
         
-        # Check if account ID image URL is set
-        account_id_image = os.getenv('ACCOUNT_ID_IMAGE_URL')
-        if not account_id_image:
+        # Check if account code image URL is set
+        code_image = os.getenv('ACCOUNT_ID_IMAGE_URL')
+        if not code_image:
             await interaction.response.send_message(
                 "⚠️ Warning: ACCOUNT_ID_IMAGE_URL is not set in your environment variables. "
                 "Users won't see an image guide when registering. "
